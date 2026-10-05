@@ -1,0 +1,22 @@
+# Secrets et configuration locale
+.env
+*.key
+*.pem
+!infra/certs/ca.crt
+infra/certs/*
+!infra/certs/.gitkeep
+!infra/certs/ca.crt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Divers
+.DS_Store
+*.log
