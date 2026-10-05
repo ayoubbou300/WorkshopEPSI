@@ -1,0 +1,13 @@
+# Backend : lit toutes les remontées des boîtiers, publie les commandes.
+user backend
+topic read sentinel/devices/+/telemetry
+topic read sentinel/devices/+/status
+topic read sentinel/devices/+/acks
+topic write sentinel/devices/+/commands
+
+# Boîtiers (esp-01, sim-01...) : le nom d'utilisateur MQTT est l'identifiant du boîtier.
+# Chaque boîtier ne peut publier que sur ses propres topics et lire ses propres commandes.
+pattern write sentinel/devices/%u/telemetry
+pattern write sentinel/devices/%u/status
+pattern write sentinel/devices/%u/acks
+pattern read sentinel/devices/%u/commands
