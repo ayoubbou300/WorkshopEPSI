@@ -1,11 +1,17 @@
+import { FlaskConical, Radar, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useLiveData, useNow } from "../useLiveData";
+import { useSoundSetting } from "../sound";
+import { deviceHealth, globalStatus } from "../status";
 import type { Command } from "../types";
+import { useHealth } from "../useHealth";
+import { useLiveData, useNow } from "../useLiveData";
+import { AlertToasts } from "./AlertToasts";
 import { AlertsPanel } from "./AlertsPanel";
-import { Charts } from "./Charts";
 import { CommandPanel } from "./CommandPanel";
-import { MetricCards } from "./MetricCards";
-import { StatusBar, deviceHealth } from "./StatusBar";
+import { Header } from "./Header";
+import { Sidebar } from "./Sidebar";
+import { StatTiles } from "./StatTiles";
+import { Telemetry } from "./Telemetry";
 import { VideoPanel } from "./VideoPanel";
 
 interface Props {
@@ -16,8 +22,10 @@ interface Props {
 
 export function Dashboard({ user, onLogout, onUnauthorized }: Props) {
   const { state, dispatch } = useLiveData(onUnauthorized);
+  const health = useHealth();
   const now = useNow();
-  const devices = Object.values(state.devices);
+  const [soundOn, toggleSound] = useSoundSetting();
+  const devices = Object.values(state.devices).sort((a, b) => Number(a.simulated) - Number(b.simulated) || a.id.localeCompare(b.id));
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Par défaut : le premier boîtier physique, sinon le simulateur.
@@ -28,73 +36,72 @@ export function Dashboard({ user, onLogout, onUnauthorized }: Props) {
   }, [devices, selectedId, state.devices]);
 
   const device = selectedId ? state.devices[selectedId] : undefined;
-  const health = deviceHealth(device, now, state.staleAfterSeconds);
+  const series = (selectedId && state.series[selectedId]) || [];
+  const devHealth = deviceHealth(device, now, state.staleAfterSeconds);
+  const status = globalStatus({ socket: state.socket, mqtt: state.mqtt, health: devHealth, alerts: state.alerts, now });
   const onCommand = useCallback((command: Command) => dispatch({ type: "command", data: command }), [dispatch]);
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <h1>
-          SENTINEL<span className="accent">-X</span> <span className="subtitle">Supervision</span>
-        </h1>
-        <div className="topbar-right">
-          {devices.length > 1 && (
-            <select value={selectedId ?? ""} onChange={(e) => setSelectedId(e.target.value)} aria-label="Boîtier">
-              {devices.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.id}
-                  {d.simulated ? " (simulé)" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          <span className="muted">{user}</span>
-          <button className="btn btn-small" onClick={onLogout}>
-            Déconnexion
-          </button>
-        </div>
-      </header>
+    <div className="shell">
+      <Sidebar
+        devices={devices}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        now={now}
+        staleAfterSeconds={state.staleAfterSeconds}
+        socket={state.socket}
+        mqtt={state.mqtt}
+        health={health}
+        user={user}
+        onLogout={onLogout}
+      />
 
-      <StatusBar socket={state.socket} mqtt={state.mqtt} device={device} now={now} staleAfterSeconds={state.staleAfterSeconds} />
+      <div className="main">
+        <Header device={device} status={status} now={now} soundOn={soundOn} onToggleSound={toggleSound} />
 
-      {device?.simulated && (
-        <div className="banner banner-sim" role="note">
-          SIMULATION : les données de {device.id} proviennent de scripts/simulate.py, pas d'un capteur physique.
-        </div>
-      )}
-      {state.socket === "closed" && (
-        <div className="banner banner-bad" role="alert">
-          Connexion temps réel perdue : reconnexion en cours. Les valeurs affichées peuvent être anciennes.
-        </div>
-      )}
-      {state.error && (
-        <div className="banner banner-bad" role="alert">
-          {state.error}
-        </div>
-      )}
+        {state.socket === "closed" && (
+          <div className="banner tone-critical" role="alert">
+            <WifiOff size={16} aria-hidden />
+            Connexion temps réel perdue — reconnexion en cours. Les valeurs affichées peuvent être anciennes.
+          </div>
+        )}
+        {device?.simulated && (
+          <div className="banner tone-warning" role="note">
+            <FlaskConical size={16} aria-hidden />
+            Données simulées : {device.id} est alimenté par scripts/simulate.py, pas par un capteur physique.
+          </div>
+        )}
+        {state.error && (
+          <div className="banner tone-critical" role="alert">
+            {state.error}
+          </div>
+        )}
 
-      {state.loaded && devices.length === 0 ? (
-        <div className="panel empty">
-          <h2>Aucun boîtier n'a encore publié de mesure</h2>
-          <p className="muted">
-            Vérifier la connexion MQTTS de l'ESP8266, ou lancer le simulateur : <code>docker compose --profile sim up simulator</code>
-          </p>
-        </div>
-      ) : (
-        <main className="grid">
-          <section className="col-main">
-            <MetricCards device={device} stale={health.tone === "warn" || health.tone === "bad"} />
-            <Charts series={(selectedId && state.series[selectedId]) || []} now={now} />
-          </section>
-          <aside className="col-side">
-            <VideoPanel />
-            <CommandPanel device={device} commands={state.commands} onCommand={onCommand} />
-          </aside>
-          <section className="col-full">
-            <AlertsPanel liveAlerts={state.alerts} />
-          </section>
-        </main>
-      )}
+        {state.loaded && devices.length === 0 ? (
+          <div className="panel empty-hero">
+            <span className="empty-hero-icon">
+              <Radar size={30} aria-hidden />
+            </span>
+            <h2>En attente d'un boîtier</h2>
+            <p>Aucun boîtier n'a encore publié de mesure. Vérifiez la connexion MQTTS de l'ESP8266, ou lancez le simulateur :</p>
+            <code>docker compose --profile sim up -d simulator</code>
+          </div>
+        ) : (
+          <div className="content">
+            <div className="col-main">
+              <StatTiles device={device} series={series} stale={devHealth.stale} now={now} />
+              <Telemetry series={series} now={now} />
+              <AlertsPanel liveAlerts={state.alerts} now={now} />
+            </div>
+            <div className="col-side">
+              <VideoPanel now={now} />
+              <CommandPanel device={device} commands={state.commands} now={now} onCommand={onCommand} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <AlertToasts feed={state.liveFeed} soundOn={soundOn} />
     </div>
   );
 }

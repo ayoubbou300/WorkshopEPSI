@@ -21,7 +21,7 @@ export function App() {
     setSession({ status: "anonymous" });
   }, []);
 
-  if (session.status === "checking") return <div className="login muted">Chargement…</div>;
+  if (session.status === "checking") return <div className="boot" aria-busy="true" />;
   if (session.status === "anonymous") return <Login onLogin={(user) => setSession({ status: "authenticated", user })} />;
   return <Dashboard user={session.user} onLogout={onLogout} onUnauthorized={onUnauthorized} />;
 }

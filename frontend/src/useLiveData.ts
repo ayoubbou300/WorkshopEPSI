@@ -12,6 +12,8 @@ interface State {
   devices: Record<string, Device>;
   series: Record<string, Measurement[]>;
   alerts: Alert[];
+  /** Alertes reçues en temps réel pendant la session (pour les notifications). */
+  liveFeed: Alert[];
   commands: Record<string, Command>;
   staleAfterSeconds: number;
   mqtt: "connected" | "disconnected" | "unknown";
@@ -36,6 +38,7 @@ const initialState: State = {
   devices: {},
   series: {},
   alerts: [],
+  liveFeed: [],
   commands: {},
   staleAfterSeconds: 15,
   mqtt: "unknown",
@@ -99,7 +102,11 @@ function reducer(state: State, action: Action): State {
     }
     case "alert":
       if (state.alerts.some((a) => a.id === action.data.id)) return state;
-      return { ...state, alerts: [action.data, ...state.alerts].slice(0, MAX_ALERTS) };
+      return {
+        ...state,
+        alerts: [action.data, ...state.alerts].slice(0, MAX_ALERTS),
+        liveFeed: [action.data, ...state.liveFeed].slice(0, 20),
+      };
     case "command":
       return { ...state, commands: { ...state.commands, [action.data.id]: action.data } };
     case "server":

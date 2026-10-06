@@ -1,10 +1,21 @@
+import { Info, OctagonAlert, ShieldAlert, TriangleAlert } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { SEVERITY_LABELS, SOURCE_LABELS, formatDateTime } from "../format";
+import { SEVERITY_LABELS, SOURCE_LABELS, alertTitle, formatAge, formatDateTime, formatNumber } from "../format";
 import type { Alert, AlertSource, Severity } from "../types";
+import { PanelHeader, Segmented } from "./ui";
 
-export function AlertsPanel({ liveAlerts }: { liveAlerts: Alert[] }) {
-  const [source, setSource] = useState<AlertSource | "">("");
+export const SEVERITY_ICONS: Record<Severity, LucideIcon> = {
+  info: Info,
+  warning: TriangleAlert,
+  critical: OctagonAlert,
+};
+
+export const SEVERITY_TONES = { info: "idle", warning: "warning", critical: "critical" } as const;
+
+export function AlertsPanel({ liveAlerts, now }: { liveAlerts: Alert[]; now: number }) {
+  const [source, setSource] = useState<AlertSource | "all">("all");
   const [severity, setSeverity] = useState<Severity | "">("");
   const [history, setHistory] = useState<Alert[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
@@ -13,7 +24,7 @@ export function AlertsPanel({ liveAlerts }: { liveAlerts: Alert[] }) {
   const fetchPage = async (beforeId?: number) => {
     setLoading(true);
     try {
-      const page = await api.alerts({ source, severity, before_id: beforeId, limit: 30 });
+      const page = await api.alerts({ source: source === "all" ? undefined : source, severity, before_id: beforeId, limit: 30 });
       setHistory((h) => (beforeId ? [...h, ...page.items] : page.items));
       setNextBefore(page.next_before_id);
     } catch {
@@ -30,60 +41,80 @@ export function AlertsPanel({ liveAlerts }: { liveAlerts: Alert[] }) {
   const items = useMemo(() => {
     const byId = new Map<number, Alert>();
     for (const a of [...liveAlerts, ...history]) {
-      if ((!source || a.source === source) && (!severity || a.severity === severity)) byId.set(a.id, a);
+      if ((source === "all" || a.source === source) && (!severity || a.severity === severity)) byId.set(a.id, a);
     }
     return [...byId.values()].sort((a, b) => b.id - a.id);
   }, [liveAlerts, history, source, severity]);
 
   return (
-    <div className="panel alerts">
-      <div className="alerts-head">
-        <h2>Alertes</h2>
-        <div className="filters">
-          <select value={source} onChange={(e) => setSource(e.target.value as AlertSource | "")} aria-label="Source">
-            <option value="">Toutes sources</option>
-            {Object.entries(SOURCE_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <select value={severity} onChange={(e) => setSeverity(e.target.value as Severity | "")} aria-label="Niveau">
-            <option value="">Tous niveaux</option>
-            {Object.entries(SEVERITY_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+    <section className="panel alerts">
+      <PanelHeader
+        icon={ShieldAlert}
+        title="Journal des alertes"
+        subtitle={`${items.length} affichée(s)`}
+        actions={
+          <div className="filters">
+            <Segmented
+              label="Source"
+              value={source}
+              onChange={setSource}
+              options={[
+                { value: "all", label: "Toutes" },
+                { value: "vision", label: SOURCE_LABELS.vision },
+                { value: "anomaly", label: SOURCE_LABELS.anomaly },
+                { value: "sensor", label: SOURCE_LABELS.sensor },
+              ]}
+            />
+            <select className="select" value={severity} onChange={(e) => setSeverity(e.target.value as Severity | "")} aria-label="Niveau">
+              <option value="">Tous niveaux</option>
+              {Object.entries(SEVERITY_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
       {items.length === 0 ? (
-        <p className="muted">Aucune alerte.</p>
+        <div className="empty-state">
+          <ShieldAlert size={22} aria-hidden />
+          <p>Aucune alerte pour ces filtres.</p>
+        </div>
       ) : (
-        <ul className="alert-list">
-          {items.map((a) => (
-            <li key={a.id} className={`alert alert-${a.severity}`}>
-              <div className="alert-top">
-                <span className={`badge badge-${a.severity}`}>{SEVERITY_LABELS[a.severity]}</span>
-                <span className="badge badge-source">{SOURCE_LABELS[a.source]}</span>
-                <span className="alert-type">{a.type}</span>
-                <time className="muted">{formatDateTime(a.event_ts ?? a.received_at)}</time>
-              </div>
-              {a.message && <p>{a.message}</p>}
-              <p className="muted small">
-                {a.device_id ?? "—"}
-                {a.score != null && ` · score ${a.score.toFixed(2)}`} · {a.event_id}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <ol className="alert-feed">
+          {items.map((a) => {
+            const Icon = SEVERITY_ICONS[a.severity];
+            const when = a.event_ts ?? a.received_at;
+            return (
+              <li key={a.id} className={`alert-item sev-${a.severity}`}>
+                <span className={`alert-icon tone-${SEVERITY_TONES[a.severity]}`}>
+                  <Icon size={16} aria-hidden />
+                </span>
+                <div className="alert-body">
+                  <div className="alert-line">
+                    <span className="alert-title">{alertTitle(a.type)}</span>
+                    <time title={formatDateTime(when)}>{formatAge(when, now)}</time>
+                  </div>
+                  {a.message && <p className="alert-message">{a.message}</p>}
+                  <div className="alert-meta">
+                    <span className={`chip sev-chip-${a.severity}`}>{SEVERITY_LABELS[a.severity]}</span>
+                    <span className="chip">{SOURCE_LABELS[a.source]}</span>
+                    {a.device_id && <span className="meta">{a.device_id}</span>}
+                    {a.score != null && <span className="meta">score {formatNumber(a.score, 2)}</span>}
+                    <span className="meta mono">{a.event_id}</span>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       )}
       {nextBefore && (
-        <button className="btn btn-block" disabled={loading} onClick={() => fetchPage(nextBefore)}>
-          {loading ? "Chargement…" : "Alertes plus anciennes"}
+        <button type="button" className="btn btn-ghost btn-block" disabled={loading} onClick={() => fetchPage(nextBefore)}>
+          {loading ? "Chargement…" : "Afficher les alertes plus anciennes"}
         </button>
       )}
-    </div>
+    </section>
   );
 }
