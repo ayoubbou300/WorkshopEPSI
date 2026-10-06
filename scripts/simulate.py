@@ -40,9 +40,9 @@ def telemetry(sequence: int, boot_id: str) -> dict:
         "boot_id": boot_id,
         "sequence": sequence,
         "timestamp": now_iso(),
-        # Une lecture DHT22 sur 15 échoue : la valeur est inconnue, pas 0.
-        "temperature": None if sequence % 15 == 7 else temperature,
-        "humidity": None if sequence % 15 == 7 else humidity,
+        # Une lecture DHT22 sur 90 (toutes les 3 min) échoue : la valeur est inconnue, pas 0.
+        "temperature": None if sequence % 90 == 45 else temperature,
+        "humidity": None if sequence % 90 == 45 else humidity,
         "gas_raw": max(0, min(1023, gas)),
         "motion": random.random() < 0.1,
         "simulated": True,
