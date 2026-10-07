@@ -7,6 +7,10 @@ infra/certs/*
 !infra/certs/.gitkeep
 !infra/certs/ca.crt
 
+# Firmware
+firmware/include/secrets.h
+firmware/.pio/
+
 # Python
 __pycache__/
 *.pyc
@@ -18,5 +22,8 @@ node_modules/
 dist/
 
 # Divers
+*.pt
+.idea/
+.vscode/
 .DS_Store
 *.log
