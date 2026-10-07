@@ -25,8 +25,8 @@ class Telemetry(Strict):
     # null = valeur inconnue (lecture capteur échouée), jamais 0.
     temperature: Optional[float] = Field(None, ge=-40, le=80, allow_inf_nan=False)
     humidity: Optional[float] = Field(None, ge=0, le=100, allow_inf_nan=False)
-    # Valeur ADC brute de l'ESP8266 (10 bits) tant qu'aucune calibration n'est définie.
-    gas_raw: Optional[int] = Field(None, ge=0, le=1023)
+    # Valeur ADC brute de l'ESP8266 (0 à 1024) tant qu'aucune calibration n'est définie.
+    gas_raw: Optional[int] = Field(None, ge=0, le=1024)
     motion: Optional[StrictBool] = None
     # Positionné uniquement par scripts/simulate.py.
     simulated: StrictBool = False
@@ -60,6 +60,28 @@ class AlertIn(Strict):
     timestamp: Optional[AwareDatetime] = None
     score: Optional[float] = Field(None, allow_inf_nan=False)
     message: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+
+
+class LegacyTelemetry(BaseModel):
+    """Ancien format publié sur sentinel/telemetry (mode compatibilité)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    device_id: Annotated[str, StringConstraints(min_length=1, max_length=32)]
+    temperature: Optional[float] = Field(None, ge=-40, le=80, allow_inf_nan=False)
+    humidity: Optional[float] = Field(None, ge=0, le=100, allow_inf_nan=False)
+    gas: Optional[int] = Field(None, ge=0, le=1024)
+    motion: Optional[StrictBool] = None
+
+
+class LegacyVisionAlert(BaseModel):
+    """Ancien format publié sur sentinel/alerts/vision par le script de vision."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    alert: Annotated[str, StringConstraints(min_length=1, max_length=48)]
+    count: Optional[int] = Field(None, ge=0, le=100)
+    timestamp: Optional[float] = Field(None, ge=0, allow_inf_nan=False)
 
 
 class CommandIn(Strict):

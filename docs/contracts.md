@@ -11,7 +11,7 @@
 | Dates | UTC, ISO 8601, suffixe `Z` (ex. `2026-10-05T14:00:00Z`) |
 | Température | °C, `-40` à `80` (plage DHT22) |
 | Humidité | %, `0` à `100` |
-| Gaz | Valeur ADC brute de l'ESP8266, `0` à `1023`, tant qu'aucune calibration n'est définie |
+| Gaz | Valeur ADC brute de l'ESP8266, `0` à `1024` (plage d'`analogRead()`), tant qu'aucune calibration n'est définie |
 | Valeur manquante | `null` ou champ absent = **inconnue**. Ne jamais envoyer `0` à la place |
 | Identifiant boîtier | `^[a-z0-9][a-z0-9-]{0,31}$`, ex. `esp-01`. C'est aussi le nom d'utilisateur MQTT |
 | Champs inconnus | Rejetés : un champ non prévu fait refuser tout le message |
@@ -195,6 +195,26 @@ via `host.docker.internal`.
 | POST | `/api/v1/devices/{id}/commands` `{"action","value"}` | Retourne `202` + commande `pending` |
 | GET | `/api/v1/commands/{id}` | État : `pending`, `confirmed`, `failed` ou `timeout` |
 | WS | `/api/v1/live` | Événements `{"type","data"}` : `measurement`, `device`, `alert`, `command`, `server` |
+
+## Mode compatibilité (temporaire)
+
+Pour intégrer l'ancien firmware et l'ancien script de vision **sans les modifier**, la stack
+peut accepter leur format. Il s'active avec `LEGACY_MQTT_ENABLED=true` dans `.env`.
+
+| Ancien topic | Sens | Traitement par le backend |
+|---|---|---|
+| `sentinel/telemetry` `{"device_id","temperature","humidity","gas","motion"}` | boîtier → serveur | `device_id` normalisé (`SENTINEL-NODE-01` → `sentinel-node-01`), `gas` → `gas_raw`, une mesure stockée toutes les 2 s au plus |
+| `sentinel/alerts/vision` `{"alert","count","timestamp"}` | IA → serveur | Alerte `vision` / `person_detected`, au plus une toutes les 30 s |
+| `sentinel/commands` | serveur → boîtier | `set_buzzer` → `{"buzzer": true/false}` ; `set_led` → `{"alert_level": "CRITICAL"}` (rouge) ou `"NORMAL"` (vert) |
+
+Limites, affichées sur le dashboard :
+- MQTT **en clair et anonyme** sur le port `MQTT_LEGACY_PORT` (1883 par défaut). L'ACL
+  (`infra/mosquitto/acl-legacy`) limite ce port aux trois topics ci-dessus.
+- Pas de confirmation : les commandes passent en état `sent`, jamais `confirmed`.
+- Pas de détection des doublons (ni `boot_id` ni `sequence`), pas de Last Will.
+
+**Ce mode ne remplit pas l'exigence de chiffrement du sujet.** Il sert à l'intégration et doit
+être désactivé (`LEGACY_MQTT_ENABLED=false`) une fois le firmware passé au format ci-dessus.
 
 ## Décisions encore ouvertes (section 5 du plan)
 

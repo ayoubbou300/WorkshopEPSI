@@ -1,4 +1,4 @@
-import { BellRing, CheckCircle2, Hourglass, Lightbulb, Loader2, SlidersHorizontal, TimerOff, XCircle } from "lucide-react";
+import { BellRing, CheckCircle2, Hourglass, Lightbulb, Loader2, Send, SlidersHorizontal, TimerOff, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api";
@@ -9,6 +9,7 @@ import { PanelHeader, StatusPill } from "./ui";
 interface ActuatorProps {
   icon: LucideIcon;
   label: string;
+  hint?: string;
   action: CommandAction;
   observed: boolean | null;
   device: Device;
@@ -43,6 +44,13 @@ function CommandResult({ command, now }: { command: Command; now: number }) {
           « {verb} » refusé{command.detail ? ` : ${command.detail}` : ""}
         </p>
       );
+    case "sent":
+      return (
+        <p className="command-result tone-idle">
+          <Send size={14} aria-hidden />
+          « {verb} » envoyé à {formatTime(command.created_at)} — ce boîtier ne renvoie pas de confirmation
+        </p>
+      );
     case "timeout":
       return (
         <p className="command-result tone-critical">
@@ -53,7 +61,7 @@ function CommandResult({ command, now }: { command: Command; now: number }) {
   }
 }
 
-function Actuator({ icon: Icon, label, action, observed, device, last, now, onCommand }: ActuatorProps) {
+function Actuator({ icon: Icon, label, hint, action, observed, device, last, now, onCommand }: ActuatorProps) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = sending || last?.status === "pending";
@@ -79,7 +87,7 @@ function Actuator({ icon: Icon, label, action, observed, device, last, now, onCo
         </span>
         <div className="actuator-text">
           <h3>{label}</h3>
-          <span className="muted small">État confirmé par le boîtier</span>
+          <span className="muted small">{hint ?? "État confirmé par le boîtier"}</span>
         </div>
         {observed == null ? (
           <StatusPill tone="idle">Inconnu</StatusPill>
@@ -138,11 +146,19 @@ export function CommandPanel({ device, commands, now, onCommand }: Props) {
 
   return (
     <section className="panel commands">
-      <PanelHeader icon={SlidersHorizontal} title="Actionneurs" subtitle={device ? `Commandes vers ${device.id}` : "Aucun boîtier"} />
+      <PanelHeader
+        icon={SlidersHorizontal}
+        title="Actionneurs"
+        subtitle={device ? `Commandes vers ${device.id}${device.protocol === "legacy" ? " · sans confirmation" : ""}` : "Aucun boîtier"}
+      />
       {device ? (
         <div className="actuators">
           <Actuator icon={BellRing} label="Buzzer d'alarme" action="set_buzzer" observed={device.buzzer} device={device} last={latest("set_buzzer")} now={now} onCommand={onCommand} />
-          <Actuator icon={Lightbulb} label="LED de statut" action="set_led" observed={device.led} device={device} last={latest("set_led")} now={now} onCommand={onCommand} />
+          <Actuator
+            icon={Lightbulb}
+            label="LED de statut"
+            hint={device.protocol === "legacy" ? "Bicolore : Activer = rouge, Arrêter = vert" : undefined}
+            action="set_led" observed={device.led} device={device} last={latest("set_led")} now={now} onCommand={onCommand} />
         </div>
       ) : (
         <p className="empty-note">Sélectionnez un boîtier pour envoyer des commandes.</p>

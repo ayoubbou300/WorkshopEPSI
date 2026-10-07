@@ -34,6 +34,7 @@ services:
       MQTT_DEVICE_ID: ${MQTT_DEVICE_ID}
       MQTT_DEVICE_PASSWORD: ${MQTT_DEVICE_PASSWORD}
       MQTT_SIM_PASSWORD: ${MQTT_SIM_PASSWORD}
+      LEGACY_MQTT_ENABLED: ${LEGACY_MQTT_ENABLED:-false}
     volumes:
       - ./infra/mosquitto:/mosquitto/config:ro
       - ./infra/certs:/mosquitto/certs:ro
@@ -41,6 +42,8 @@ services:
     ports:
       # Seul le listener TLS est publié pour l'ESP8266.
       - "${MQTTS_PORT:-8883}:8883"
+      # Mode compatibilité uniquement (LEGACY_MQTT_ENABLED=true) ; sinon rien n'écoute derrière.
+      - "${MQTT_LEGACY_PORT:-1883}:1884"
     networks: [backend]
     healthcheck:
       # Port 1883 (0x075B) en écoute ; BusyBox nc ne propose pas -z.
@@ -67,6 +70,7 @@ services:
       COMMAND_TIMEOUT_SECONDS: ${COMMAND_TIMEOUT_SECONDS:-10}
       STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS:-15}
       VIDEO_STREAM_URL: ${VIDEO_STREAM_URL:-}
+      LEGACY_MQTT_ENABLED: ${LEGACY_MQTT_ENABLED:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

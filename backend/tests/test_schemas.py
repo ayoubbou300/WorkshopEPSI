@@ -21,6 +21,11 @@ def test_telemetry_valid():
     assert t.temperature == 24.5 and t.simulated is False
 
 
+def test_gas_accepts_full_esp8266_adc_range():
+    # analogRead() de l'ESP8266 renvoie 0 à 1024.
+    assert Telemetry.model_validate({**VALID, "gas_raw": 1024}).gas_raw == 1024
+
+
 def test_missing_values_stay_unknown():
     data = {k: v for k, v in VALID.items() if k not in ("temperature", "humidity")}
     data["timestamp"] = None

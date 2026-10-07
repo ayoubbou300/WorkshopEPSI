@@ -15,7 +15,7 @@ COMMAND_COLUMNS = (
     "id, device_id, action, value, created_at, expires_at, status, acked_at, ack_status, detail"
 )
 DEVICE_COLUMNS = (
-    "id, name, simulated, last_seen_at, mqtt_online, mqtt_status_at, buzzer, led"
+    "id, name, simulated, protocol, last_seen_at, mqtt_online, mqtt_status_at, buzzer, led"
 )
 
 
@@ -26,12 +26,15 @@ def _row(record: Optional[asyncpg.Record]) -> Optional[dict[str, Any]]:
 # --- Boîtiers ---------------------------------------------------------------
 
 
-async def ensure_device(conn: asyncpg.Connection, device_id: str, simulated: bool = False) -> None:
+async def ensure_device(
+    conn: asyncpg.Connection, device_id: str, simulated: bool = False, protocol: str = "v1"
+) -> None:
     await conn.execute(
-        "INSERT INTO devices (id, simulated) VALUES ($1, $2)"
-        " ON CONFLICT (id) DO UPDATE SET simulated = EXCLUDED.simulated",
+        "INSERT INTO devices (id, simulated, protocol) VALUES ($1, $2, $3)"
+        " ON CONFLICT (id) DO UPDATE SET simulated = EXCLUDED.simulated, protocol = EXCLUDED.protocol",
         device_id,
         simulated,
+        protocol,
     )
 
 
@@ -79,10 +82,12 @@ async def list_devices(conn: asyncpg.Connection) -> list[dict[str, Any]]:
 # --- Mesures ----------------------------------------------------------------
 
 
-async def insert_measurement(conn: asyncpg.Connection, t: Telemetry) -> Optional[dict[str, Any]]:
+async def insert_measurement(
+    conn: asyncpg.Connection, t: Telemetry, protocol: str = "v1"
+) -> Optional[dict[str, Any]]:
     """Stocke la mesure ; retourne None si c'est une retransmission déjà reçue."""
     async with conn.transaction():
-        await ensure_device(conn, t.device_id, t.simulated)
+        await ensure_device(conn, t.device_id, t.simulated, protocol)
         record = await conn.fetchrow(
             "INSERT INTO measurements"
             " (device_id, sensor_ts, temperature, humidity, gas_raw, motion, boot_id, sequence)"
@@ -187,16 +192,20 @@ async def create_command(
     action: str,
     value: bool,
     expires_at: datetime,
+    status: str = "pending",
+    detail: Optional[str] = None,
 ) -> dict[str, Any]:
     record = await conn.fetchrow(
-        "INSERT INTO commands (id, device_id, action, value, expires_at, status)"
-        " VALUES ($1, $2, $3, $4, $5, 'pending')"
+        "INSERT INTO commands (id, device_id, action, value, expires_at, status, detail)"
+        " VALUES ($1, $2, $3, $4, $5, $6, $7)"
         f" RETURNING {COMMAND_COLUMNS}",
         command_id,
         device_id,
         action,
         value,
         expires_at,
+        status,
+        detail,
     )
     return dict(record)
 

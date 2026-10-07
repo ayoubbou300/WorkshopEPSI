@@ -1,4 +1,4 @@
-import { FlaskConical, Radar, WifiOff } from "lucide-react";
+import { FlaskConical, Radar, ShieldOff, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useSoundSetting } from "../sound";
 import { deviceHealth, globalStatus } from "../status";
@@ -69,6 +69,12 @@ export function Dashboard({ user, onLogout, onUnauthorized }: Props) {
           <div className="banner tone-warning" role="note">
             <FlaskConical size={16} aria-hidden />
             Données simulées : {device.id} est alimenté par scripts/simulate.py, pas par un capteur physique.
+          </div>
+        )}
+        {device?.protocol === "legacy" && (
+          <div className="banner tone-warning" role="note">
+            <ShieldOff size={16} aria-hidden />
+            Mode compatibilité : {device.id} utilise l'ancien firmware (MQTT non chiffré, commandes sans confirmation). À migrer vers MQTTS avant la démo.
           </div>
         )}
         {state.error && (

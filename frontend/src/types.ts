@@ -15,6 +15,8 @@ export interface Device {
   id: string;
   name: string | null;
   simulated: boolean;
+  /** "legacy" : ancien firmware (topics partagés, MQTT en clair, sans confirmation). */
+  protocol: "v1" | "legacy";
   last_seen_at: string | null;
   mqtt_online: boolean | null;
   mqtt_status_at: string | null;
@@ -40,7 +42,7 @@ export interface Alert {
 }
 
 export type CommandAction = "set_buzzer" | "set_led";
-export type CommandStatus = "pending" | "confirmed" | "failed" | "timeout";
+export type CommandStatus = "pending" | "confirmed" | "failed" | "timeout" | "sent";
 
 export interface Command {
   id: string;
