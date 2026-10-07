@@ -68,6 +68,7 @@ export function Sidebar({ devices, selectedId, onSelect, now, staleAfterSeconds,
                     <span className="device-name">
                       {d.id}
                       {d.simulated && <span className="tag">SIM</span>}
+                      {d.protocol === "legacy" && <span className="tag tag-compat">COMPAT</span>}
                     </span>
                     <span className="device-meta">
                       <StatusDot tone={h.tone} pulse={h.tone === "good"} />

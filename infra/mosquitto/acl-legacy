@@ -1,0 +1,5 @@
+# Mode compatibilité TEMPORAIRE (listener en clair, clients anonymes).
+# Limité aux topics de l'ancien firmware et de l'ancien script de vision.
+topic write sentinel/telemetry
+topic write sentinel/alerts/vision
+topic read sentinel/commands

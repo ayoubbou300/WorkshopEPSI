@@ -124,6 +124,7 @@ code {
   vertical-align: middle;
 }
 .tag-lg { font-size: 11px; padding: 3px 8px; text-transform: uppercase; }
+.tag-compat { color: #fecaca; background: rgba(208, 59, 59, 0.12); border-color: rgba(208, 59, 59, 0.35); }
 
 /* --- Boutons et contrôles ---------------------------------------------- */
 .btn {

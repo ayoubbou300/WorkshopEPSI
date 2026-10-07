@@ -24,4 +24,14 @@ mosquitto_passwd -b "$PASSWD" "$MQTT_DEVICE_ID" "$MQTT_DEVICE_PASSWORD"
 mosquitto_passwd -b "$PASSWD" sim-01 "$MQTT_SIM_PASSWORD"
 chown mosquitto:mosquitto "$PASSWD"
 
+# Mode compatibilité : listener MQTT en clair, anonyme, restreint par acl-legacy.
+# À désactiver avant la démo (le sujet impose le chiffrement ESP8266 <-> stack).
+CONF_D=/mosquitto/data/conf.d
+mkdir -p "$CONF_D"
+rm -f "$CONF_D"/*.conf
+if [ "${LEGACY_MQTT_ENABLED:-false}" = "true" ]; then
+  printf 'listener 1884 0.0.0.0\nallow_anonymous true\nacl_file /mosquitto/config/acl-legacy\n' > "$CONF_D/legacy.conf"
+  echo "ATTENTION : mode compatibilité actif, MQTT en clair sans authentification (port 1884 du conteneur)" >&2
+fi
+
 exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf

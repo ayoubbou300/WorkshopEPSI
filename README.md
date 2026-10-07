@@ -99,6 +99,15 @@ Relancer avec le même `--event-id` montre la déduplication (`"duplicate": true
   est nécessaire pour valider la date du certificat.
 - Formats et règles des messages : [docs/contracts.md](docs/contracts.md).
 
+### Mode compatibilité (ancien firmware)
+
+Tant que le firmware et le script de vision utilisent encore les topics `sentinel/telemetry`,
+`sentinel/commands` et `sentinel/alerts/vision`, mettez `LEGACY_MQTT_ENABLED=true` dans `.env`,
+puis lancez `docker compose up -d`. Le boîtier se connecte alors en MQTT **non chiffré** sur
+`<IP-du-serveur>:1883` et apparaît avec le badge **COMPAT**. Détails et limites :
+[docs/contracts.md](docs/contracts.md#mode-compatibilité-temporaire). **Repassez à `false`
+avant la démo.**
+
 ### Brancher le service IA
 
 - Alertes : `POST https://<serveur>/api/v1/alerts` avec l'en-tête `X-API-Key`, en vérifiant le

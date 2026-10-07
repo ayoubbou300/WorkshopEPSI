@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     video_stream_url: str = ""
     max_body_bytes: int = 16 * 1024
 
+    # Mode compatibilité TEMPORAIRE avec l'ancien firmware et l'ancien script de vision.
+    legacy_mqtt_enabled: bool = False
+    legacy_min_interval_seconds: float = 2.0
+    legacy_vision_cooldown_seconds: float = 30.0
+
     @field_validator("mqtt_password", "alerts_api_key", "dashboard_password", "session_secret")
     @classmethod
     def no_placeholder(cls, value: str) -> str:
