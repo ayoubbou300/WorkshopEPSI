@@ -30,7 +30,8 @@ cat > server.ext <<EOF
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=IP:$IP,DNS:$DNS,DNS:localhost,IP:127.0.0.1
+# DNS:$IP en plus d'IP:$IP : BearSSL (ESP8266) ne compare le nom qu'aux entrées DNS.
+subjectAltName=IP:$IP,DNS:$IP,DNS:$DNS,DNS:localhost,IP:127.0.0.1
 EOF
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
   -days "$DAYS" -sha256 -extfile server.ext -out server.crt
@@ -40,5 +41,5 @@ rm -f server.csr server.ext ca.srl
 chmod 0644 ca.crt server.crt server.key
 chmod 0600 ca.key
 
-echo "Certificats générés dans $DIR (SAN : IP:$IP, DNS:$DNS)"
+echo "Certificats générés dans $DIR (SAN : IP:$IP, DNS:$IP, DNS:$DNS)"
 openssl x509 -in server.crt -noout -subject -enddate
