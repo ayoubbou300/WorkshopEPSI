@@ -1,0 +1,6 @@
+[08/10/2026 11:44:03] APPAREIL CONNECTÉ -> Adresse IP: 172.19.0.1 | Agent: curl/8.21.0
+[08/10/2026 11:54:02] 🌐 PREMIÈRE CONNEXION WEB -> IP: 172.19.0.1 | Agent: Mozilla/5.0 (Windows NT; Windows NT 10.0; fr-FR) WindowsPowerShell/5.1.26100.9549
+[08/10/2026 11:54:02] 🚨 TENTATIVE DASHBOARD -> IP: 172.19.0.1 | Utilisateur testé: 'hacker' | Statut: ❌ ÉCHEC (Identifiants invalides)
+[08/10/2026 11:56:45] 📶 TENTATIVE WI-FI HOTSPOT -> MAC: 00:D4:9E:EE:34:FA | Statut: 🚨 REJETÉE & EXPULSÉE (MAC Non Autorisée)
+[08/10/2026 11:56:45] 📶 TENTATIVE WI-FI HOTSPOT -> MAC: 50:28:4A:01:10:21 | Statut: ✅ AUTORISÉE (MAC Whitelisted)
+[08/10/2026 11:56:45] 📶 TENTATIVE WI-FI HOTSPOT -> MAC: 00:D4:9E:EE:34:FA | Statut: 🚨 REJETÉE & EXPULSÉE (MAC Non Autorisée)

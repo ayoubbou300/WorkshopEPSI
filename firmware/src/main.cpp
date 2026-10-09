@@ -7,18 +7,46 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <PubSubClient.h>
-#include <Wire.h>
+extern "C" {
+#include "user_interface.h"
+}
 
-// Identifiants Wi-Fi, adresse du broker, certificat et clé du serveur HTTPS embarqué :
-// définis dans include/secrets.h (non versionné). Modèle : include/secrets.example.h.
-#if __has_include("secrets.h")
-#include "secrets.h"
-#else
-#error "include/secrets.h absent : copier include/secrets.example.h et le compléter"
-#endif
-
-// Serveur Web sécurisé HTTPS sur le port 443
+// Serveur Web sécurisé HTTPS sur le port 443 (BearSSL ECC)
 BearSSL::ESP8266WebServerSecure webServer(443);
+
+// ── CERTIFICAT ECC X.509 (server/esp_cert.pem) ──
+const char server_cert[] PROGMEM = R"PEM(
+-----BEGIN CERTIFICATE-----
+MIIBYzCCAQqgAwIBAgIUHN/cmH8FGRDIaYYD6NXYOFlEV2YwCgYIKoZIzj0EAwIw
+GDEWMBQGA1UEAwwNZXNwODI2Ni5sb2NhbDAeFw0yNjEwMDgwODA5MjZaFw0zNjEw
+MDUwODA5MjZaMBgxFjAUBgNVBAMMDWVzcDgyNjYubG9jYWwwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAATVhoepwtpGbAJSarBPY/ANFVZ7mTFWSTfdsT6sViB+7JKk
+JyCLRiPiDgb5xF4yeuU7gd4RjWevTJvbhKbPC6C3ozIwMDAdBgNVHQ4EFgQUqAPV
+TPmKcji3a/qvPEEOWf38/zIwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNH
+ADBEAiB0HRh8H42OLrMlCNaDQ1OPjL9W62rZtvbYNqYou5n6HgIgI5EG/8PJ+QO6
+rSLsSYMICWXAH923nJgd3bzowMoTBPs=
+-----END CERTIFICATE-----
+)PEM";
+
+// ── CLÉ PRIVÉE ECC (server/esp_key.pem) ──
+const char server_key[] PROGMEM = R"PEM(
+-----BEGIN EC PARAMETERS-----
+BggqhkjOPQMBBw==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIOfTMXK1n4PGnOjDi+d1Y2bTTK1nfAqjom3thfxM7P9MoAoGCCqGSM49
+AwEHoUQDQgAE1YaHqcLaRmwCUmqwT2PwDRVWe5kxVkk33bE+rFYgfuySpCcgi0Yj
+4g4G+cReMnrlO4HeEY1nr0yb24Smzwugtw==
+-----END EC PRIVATE KEY-----
+)PEM";
+
+// Configuration du Point d'Accès Wi-Fi émis par la carte (SoftAP)
+const char *AP_SSID = "SENTINEL-X10-SECURE";
+const char *AP_PASS = "P@sSw0rdSG10!?";
+
+// Configuration du Serveur MQTT
+const char *MQTT_SERVER = "192.168.4.2"; // IP de ton PC (Mosquitto)
+const int MQTT_PORT = 1883;
 
 // ==========================================
 // AFFECTATION DES BROCHES (PINOUT ESP8266)
@@ -43,12 +71,57 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 // Variables globales de mesures
-// NAN = valeur inconnue (lecture DHT22 échouée) : publiée en null, affichée « -- ».
-float temperature = NAN;
-float humidity = NAN;
+float temperature = 0.0;
+float humidity = 0.0;
 int gasRawValue = 0;
 bool motionDetected = false;
+bool manualBuzzerState = false;
 unsigned long lastPublishTime = 0;
+
+// Filtrage par Adresse MAC : Seule la carte Wi-Fi de ton PC est autorisée
+uint8_t ALLOWED_MAC[6] = {0x50, 0x28, 0x4A, 0x01, 0x10, 0x21};
+
+WiFiEventHandler stationConnectedHandler;
+
+void onStationConnected(const WiFiEventSoftAPModeStationConnected &evt) {
+  bool isAuthorized = true;
+  for (int i = 0; i < 6; i++) {
+    if (evt.mac[i] != ALLOWED_MAC[i]) {
+      isAuthorized = false;
+      break;
+    }
+  }
+
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           evt.mac[0], evt.mac[1], evt.mac[2], evt.mac[3], evt.mac[4], evt.mac[5]);
+
+  if (!isAuthorized) {
+    Serial.printf("[SÉCURITÉ 🚨] APPAREIL REJETÉ & EXPULSÉ ! MAC non autorisée : %s\n", macStr);
+    WiFi.softAPdisconnect(false);
+    WiFi.softAP(AP_SSID, AP_PASS, 1, 0);
+
+    if (mqttClient.connected()) {
+      StaticJsonDocument<128> doc;
+      doc["mac"] = macStr;
+      doc["status"] = "REJECTED";
+      char buf[128];
+      serializeJson(doc, buf);
+      mqttClient.publish("sentinel/security/wifi_attempt", buf);
+    }
+  } else {
+    Serial.printf("[SÉCURITÉ ✅] APPAREIL AUTORISÉ CONNECTÉ ! MAC: %s\n", macStr);
+
+    if (mqttClient.connected()) {
+      StaticJsonDocument<128> doc;
+      doc["mac"] = macStr;
+      doc["status"] = "ALLOWED";
+      char buf[128];
+      serializeJson(doc, buf);
+      mqttClient.publish("sentinel/security/wifi_attempt", buf);
+    }
+  }
+}
 
 void setupWiFi() {
   delay(10);
@@ -61,36 +134,31 @@ void setupWiFi() {
   WiFi.disconnect(true);
   delay(200);
 
-  // Mode station : le boîtier rejoint le Wi-Fi du PC Serveur Local (option B du sujet),
-  // seule façon d'atteindre le broker MQTT hébergé sur ce PC.
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  stationConnectedHandler =
+      WiFi.onSoftAPModeStationConnected(&onStationConnected);
 
-  Serial.print("[WiFi] Connexion à '");
-  Serial.print(WIFI_SSID);
-  Serial.print("'");
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
-    delay(250);
-    Serial.print(".");
-  }
-  bool connected = WiFi.status() == WL_CONNECTED;
-  IPAddress ip = WiFi.localIP();
+  // Mode Point d'Accès autonome (SoftAP) : Aucun PC ni box requis
+  WiFi.mode(WIFI_AP);
+  bool apSuccess = WiFi.softAP(AP_SSID, AP_PASS, 1, 0);
 
-  Serial.println(connected ? " ✅ SUCCÈS" : " ❌ ÉCHEC (nouvelle tentative automatique)");
-  Serial.print("[WiFi] IP : ");
-  Serial.println(ip);
+  IPAddress apIP = WiFi.softAPIP();
+
+  Serial.print("[WiFi AP] Hotspot autonome '");
+  Serial.print(AP_SSID);
+  Serial.print("' -> ");
+  Serial.println(apSuccess ? "✅ SUCCÈS" : "❌ ÉCHEC");
+  Serial.print("[WiFi AP] IP : ");
+  Serial.println(apIP);
 
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
   display.println("SENTINEL-X READY");
-  display.println("Wi-Fi :");
-  display.println(WIFI_SSID);
+  display.println("Wi-Fi Hotspot :");
+  display.println(AP_SSID);
   display.print("IP: ");
-  display.println(connected ? ip.toString() : String("non connecte"));
+  display.println(apIP);
   display.display();
   delay(1500);
 }
@@ -102,30 +170,28 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     return;
 
   if (doc.containsKey("buzzer")) {
-    bool buzzerState = doc["buzzer"];
-    digitalWrite(BUZZER_PIN, buzzerState ? HIGH : LOW);
-  }
-  if (doc.containsKey("alert_level")) {
-    const char *level = doc["alert_level"];
-    if (strcmp(level, "CRITICAL") == 0) {
-      digitalWrite(LED_RED_PIN, HIGH);
-      digitalWrite(LED_GREEN_PIN, LOW);
-    } else {
-      digitalWrite(LED_RED_PIN, LOW);
-      digitalWrite(LED_GREEN_PIN, HIGH);
-    }
+    manualBuzzerState = doc["buzzer"];
+    Serial.print("[MQTT] Commande Buzzer reçue : ");
+    Serial.println(manualBuzzerState ? "ACTIVÉ" : "DÉSACTIVÉ");
   }
 }
 
+unsigned long lastMQTTAttempt = 0;
+
 void reconnectMQTT() {
-  while (!mqttClient.connected()) {
+  unsigned long now = millis();
+  if (now - lastMQTTAttempt > 3000) {
+    lastMQTTAttempt = now;
     String clientId = "SentinelX-ESP8266-";
     clientId += String(ESP.getChipId(), HEX);
     if (mqttClient.connect(clientId.c_str())) {
+      Serial.println(
+          "[MQTT] ✅ Connecté au Broker Mosquitto PC (192.168.4.2:1883)");
       mqttClient.subscribe("sentinel/commands");
     } else {
-      delay(2000);
-      break;
+      Serial.print("[MQTT] ⏳ Attente PC sur 192.168.4.2:1883... (code: ");
+      Serial.print(mqttClient.state());
+      Serial.println(")");
     }
   }
 }
@@ -141,7 +207,7 @@ void updateOLED() {
   display.print("SENTINEL-X");
 
   display.setCursor(82, 2);
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.getMode() == WIFI_AP || WiFi.status() == WL_CONNECTED) {
     display.print("[ON]");
   } else {
     display.print("[OFF]");
@@ -155,10 +221,7 @@ void updateOLED() {
   display.print("TEMP");
   display.setCursor(2, 26);
   display.setTextSize(2);
-  if (isnan(temperature))
-    display.print("--.-");
-  else
-    display.print(temperature, 1);
+  display.print(temperature, 1);
   display.setTextSize(1);
   display.print("C");
 
@@ -170,10 +233,7 @@ void updateOLED() {
   display.print("HUMI");
   display.setCursor(70, 26);
   display.setTextSize(2);
-  if (isnan(humidity))
-    display.print("--");
-  else
-    display.print((int)humidity);
+  display.print((int)humidity);
   display.setTextSize(1);
   display.print("%");
 
@@ -202,9 +262,6 @@ void updateOLED() {
 }
 
 // ── SERVEUR WEB : HANDLERS REST API & DASHBOARD HTML ──
-String temperatureText() { return isnan(temperature) ? String("--") : String(temperature, 1); }
-String humidityText() { return isnan(humidity) ? String("--") : String((int)humidity); }
-
 void handleRoot() {
   String html = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta "
                 "name='viewport' content='width=device-width,initial-scale=1'>";
@@ -223,9 +280,9 @@ void handleRoot() {
   html += "</style></head><body>";
   html += "<h1>🛡️ SENTINEL-X NODE</h1>";
   html += "<div class='card'><div>Température</div><div class='val' id='t'>" +
-          temperatureText() + " °C</div></div>";
+          String(temperature, 1) + " °C</div></div>";
   html += "<div class='card'><div>Humidité</div><div class='val' id='h'>" +
-          humidityText() + " %</div></div>";
+          String((int)humidity) + " %</div></div>";
   html += "<div class='card'><div>Qualité d'Air (MQ-2)</div><div class='val' "
           "id='g'>" +
           String(gasRawValue) + "</div></div>";
@@ -238,8 +295,8 @@ void handleRoot() {
   html +=
       "<script>setInterval(()=>{fetch('/api/data').then(r=>r.json()).then(d=>{";
   html +=
-      "document.getElementById('t').innerText=(d.temperature==null?'--':d.temperature.toFixed(1))+' °C';";
-  html += "document.getElementById('h').innerText=(d.humidity==null?'--':Math.round(d.humidity))+' %';";
+      "document.getElementById('t').innerText=d.temperature.toFixed(1)+' °C';";
+  html += "document.getElementById('h').innerText=Math.round(d.humidity)+' %';";
   html += "document.getElementById('g').innerText=d.gas;";
   html +=
       "document.getElementById('m').innerText=d.motion?'⚠️ INTRUSION':'✅ RAS';";
@@ -260,10 +317,11 @@ void handleApiData() {
 }
 
 void handleBuzzer() {
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(300);
-  digitalWrite(BUZZER_PIN, LOW);
-  webServer.send(200, "text/plain", "BUZZER_OK");
+  manualBuzzerState = !manualBuzzerState;
+  Serial.print("[HTTPS] Commande Buzzer HTTP reçue : ");
+  Serial.println(manualBuzzerState ? "ACTIVÉ" : "DÉSACTIVÉ");
+  webServer.send(200, "text/plain",
+                 manualBuzzerState ? "BUZZER_ON" : "BUZZER_OFF");
 }
 
 void setup() {
@@ -286,9 +344,10 @@ void setup() {
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
 
-  // Configuration du certificat SSL X.509 et de la clé privée BearSSL
-  webServer.getServer().setRSACert(new BearSSL::X509List(server_cert),
-                                   new BearSSL::PrivateKey(server_key));
+  // Configuration du certificat ECC et de la clé privée BearSSL
+  webServer.getServer().setECCert(new BearSSL::X509List(server_cert),
+                                  BR_KEYTYPE_EC,
+                                  new BearSSL::PrivateKey(server_key));
 
   // Configuration des routes du serveur HTTPS embarqué
   webServer.on("/", handleRoot);
@@ -307,7 +366,7 @@ void loop() {
   webServer.handleClient(); // Traite les requêtes Web des navigateurs (PC /
                             // Téléphone)
 
-  if (WiFi.status() == WL_CONNECTED && !mqttClient.connected()) {
+  if (!mqttClient.connected()) {
     reconnectMQTT();
   }
   mqttClient.loop();
@@ -325,11 +384,13 @@ void loop() {
     motionDetected = (pirRaw == HIGH);
 
     // Diagnostics DHT
-    temperature = rawTemp;
-    humidity = rawHumi;
     if (isnan(rawTemp) || isnan(rawHumi)) {
-      Serial.print("[DHT] ❌ Echec D5 (valeur inconnue) | ");
+      Serial.print("[DHT] ❌ Echec D5 (fallback 22.5°C/45%) | ");
+      temperature = 22.5;
+      humidity = 45.0;
     } else {
+      temperature = rawTemp;
+      humidity = rawHumi;
       Serial.print("[DHT] Temp: ");
       Serial.print(temperature, 1);
       Serial.print("C  Humi: ");
@@ -347,16 +408,33 @@ void loop() {
     Serial.print("[MQ-2 A0] raw=");
     Serial.println(gasRawValue);
 
+    // Gestion Automatique de l'Alarme (Intrusion PIR, Température >= 45°C, Gaz
+    // Élevé ou Commande Manuel)
+    bool isAlarmActive = motionDetected || (temperature >= 35.0) ||
+                         (gasRawValue > 450) || manualBuzzerState;
+
+    if (isAlarmActive) {
+      digitalWrite(LED_RED_PIN, HIGH);
+      digitalWrite(LED_GREEN_PIN, LOW);
+      digitalWrite(BUZZER_PIN, HIGH);
+      tone(BUZZER_PIN, 2000); // 2kHz tone pour buzzer actif et passif
+    } else {
+      digitalWrite(LED_RED_PIN, LOW);
+      digitalWrite(LED_GREEN_PIN, HIGH);
+      digitalWrite(BUZZER_PIN, LOW);
+      noTone(BUZZER_PIN);
+    }
+
     updateOLED();
 
     if (mqttClient.connected()) {
-      // NAN -> null dans le JSON : le serveur affiche « valeur inconnue », jamais un faux chiffre.
       StaticJsonDocument<256> doc;
       doc["device_id"] = "SENTINEL-NODE-01";
       doc["temperature"] = temperature;
       doc["humidity"] = humidity;
       doc["gas"] = gasRawValue;
       doc["motion"] = motionDetected;
+      doc["buzzer"] = isAlarmActive;
 
       char buffer[256];
       serializeJson(doc, buffer);

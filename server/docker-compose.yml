@@ -1,0 +1,78 @@
+services:
+
+  # ─────────────────────────────────────────────
+  # Broker MQTT Mosquitto
+  # ─────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: sentinel_mosquitto
+    restart: always
+    ports:
+      - "1883:1883"   # MQTT standard (ESP8266, Backend, AI Vision)
+      - "9001:9001"   # MQTT over WebSockets (Dashboard)
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  # ─────────────────────────────────────────────
+  # Base de Données MongoDB
+  # ─────────────────────────────────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: sentinel_mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # ─────────────────────────────────────────────
+  # Interface Web Admin MongoDB (Mongo-Express)
+  # ─────────────────────────────────────────────
+  mongo-express:
+    image: mongo-express
+    container_name: sentinel_mongo_express
+    restart: always
+    ports:
+      - "8081:8081"   # Accès Admin DB : http://localhost:8081
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+
+  # ─────────────────────────────────────────────
+  # Backend API Node.js / Express
+  # ─────────────────────────────────────────────
+  backend:
+    build: ./backend
+    container_name: sentinel_backend
+    restart: always
+    ports:
+      - "3000:3000"   # REST API : http://localhost:3000
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/sentinel_db
+      - MQTT_BROKER=mqtt://mosquitto:1883
+      - PORT=3000
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      - mongo
+      - mosquitto
+
+  # ─────────────────────────────────────────────
+  # Dashboard Web (HTML/JS via Nginx)
+  # ─────────────────────────────────────────────
+  dashboard:
+    image: nginx:alpine
+    container_name: sentinel_dashboard
+    restart: always
+    ports:
+      - "8080:80"     # Accès : http://localhost:8080
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - mosquitto
+      - backend
+
+volumes:
+  mongo_data:

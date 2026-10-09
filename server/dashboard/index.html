@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL-X — Centre de Commandement & Supervision</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(18, 26, 43, 0.75);
+            --border-color: rgba(64, 93, 138, 0.3);
+            --accent-cyan: #00f0ff;
+            --accent-green: #00ff88;
+            --accent-red: #ff3366;
+            --accent-orange: #ff9900;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 20px;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(0, 240, 255, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(255, 51, 102, 0.05) 0%, transparent 40%);
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .brand h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-cyan), #7000ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--accent-green);
+            border-radius: 20px;
+            color: var(--accent-green);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(0, 240, 255, 0.5);
+        }
+
+        .card-header {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-danger {
+            background: rgba(255, 51, 102, 0.2);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: var(--accent-red);
+            color: white;
+            box-shadow: 0 0 15px rgba(255, 51, 102, 0.5);
+        }
+
+        .btn-success {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: var(--accent-green);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+        }
+
+        .log-box {
+            height: 180px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .log-item {
+            margin-bottom: 5px;
+            padding: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-item.alert {
+            color: var(--accent-red);
+        }
+
+        .log-item.info {
+            color: var(--accent-cyan);
+        }
+    </style>
+</head>
+
+<!-- MODAL DE CONNEXION ÉCRAN DE SÉCURITÉ -->
+<div id="loginOverlay"
+    style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(11, 15, 25, 0.96); backdrop-filter: blur(15px); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+    <div
+        style="background: rgba(18, 26, 43, 0.95); border: 1px solid var(--accent-cyan); border-radius: 20px; padding: 35px; width: 90%; max-width: 380px; box-shadow: 0 0 35px rgba(0, 240, 255, 0.25); text-align: center;">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">🛡️</div>
+        <h2 style="color: var(--text-main); font-weight: 700; margin-bottom: 5px; letter-spacing: 1px;">SENTINEL-X</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 25px;">Authentification Sécurisée Requise
+        </p>
+
+        <form onsubmit="handleLogin(event)">
+            <div style="margin-bottom: 15px; text-align: left;">
+                <label style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-bottom: 5px;">NOM
+                    D'UTILISATEUR</label>
+                <input type="text" id="loginUser" required
+                    style="width: 100%; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none;">
+            </div>
+            <div style="margin-bottom: 20px; text-align: left;">
+                <label style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-bottom: 5px;">MOT DE
+                    PASSE</label>
+                <input type="password" id="loginPass" required
+                    style="width: 100%; padding: 12px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none;">
+            </div>
+            <div id="loginError"
+                style="color: var(--accent-red); font-size: 0.85rem; margin-bottom: 15px; display: none;">Identifiant ou
+                mot de passe incorrect !</div>
+            <button type="submit"
+                style="width: 100%; padding: 12px; background: linear-gradient(135deg, var(--accent-cyan), #7000ff); border: none; border-radius: 10px; color: #fff; font-weight: 700; cursor: pointer; font-size: 1rem; transition: transform 0.2s ease;">SE
+                CONNECTER</button>
+        </form>
+    </div>
+</div>
+
+<header>
+    <div class="brand">
+        <h1>SENTINEL-X</h1>
+        <span style="color: var(--text-muted); font-size: 0.9rem;">Avant-Poste Industriel du Futur</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <div class="status-badge" id="system-status">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green);"></span>
+            SYSTÈME ACTIF
+        </div>
+        <button onclick="handleLogout()" class="btn"
+            style="background: rgba(255, 51, 102, 0.15); color: var(--accent-red); border: 1px solid var(--accent-red); padding: 6px 14px; font-size: 0.85rem;">🔒
+            Verrouiller</button>
+    </div>
+</header>
+
+<div class="grid">
+    <div class="card">
+        <div class="card-header">Température</div>
+        <div class="card-value" id="val-temp">-- °C</div>
+    </div>
+    <div class="card">
+        <div class="card-header">Humidité</div>
+        <div class="card-value" id="val-humi">-- %</div>
+    </div>
+    <div class="card">
+        <div class="card-header">Qualité de l'Air / Gaz (MQ-2)</div>
+        <div class="card-value" id="val-gas">-- ppm</div>
+    </div>
+    <div class="card">
+        <div class="card-header">Détection Mouvement (PIR)</div>
+        <div class="card-value" id="val-pir">RAS</div>
+    </div>
+</div>
+
+<div class="charts-grid">
+    <div class="card">
+        <div class="card-header">Télémétrie en Temps Réel</div>
+        <canvas id="telemetryChart" height="120"></canvas>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Commandes Réactives & Journal</div>
+        <div class="controls">
+            <button class="btn btn-danger" onclick="triggerBuzzer(true)">🔔 Buzzer ON</button>
+            <button class="btn btn-success" onclick="triggerBuzzer(false)">🔕 Buzzer OFF</button>
+            <a id="btnLogIP" href="http://localhost:3000/api/connections/log" target="_blank" class="btn"
+                style="background: rgba(0, 240, 255, 0.15); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); text-decoration: none; display: inline-flex; align-items: center;">📄
+                Log IP Wi-Fi</a>
+        </div>
+        <div style="margin-top: 20px;" class="card-header">Journal des Événements</div>
+        <div class="log-box" id="logBox">
+            <div class="log-item info">[SYS] Démarrage de la console de supervision...</div>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+
+</html>

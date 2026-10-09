@@ -1,29 +1,22 @@
-# Secrets et configuration locale
-.env
-*.key
-*.pem
-!infra/certs/ca.crt
-infra/certs/*
-!infra/certs/.gitkeep
-!infra/certs/ca.crt
+# Executables et Archives volumineux
+_Divers/*.exe
+_Divers/*.zip
+*.exe
+*.zip
 
-# Firmware
-firmware/include/secrets.h
-firmware/.pio/
+# PlatformIO & IDE Build files
+.pio/
+.vscode/
+.idea/
+*.bin
+*.elf
 
 # Python
 __pycache__/
 *.pyc
-.venv/
-.pytest_cache/
+venv/
+.env
 
-# Node
-node_modules/
-dist/
-
-# Divers
-*.pt
-.idea/
-.vscode/
-.DS_Store
-*.log
+# Docker logs & persistent data
+server/mosquitto/data/
+server/mosquitto/log/
